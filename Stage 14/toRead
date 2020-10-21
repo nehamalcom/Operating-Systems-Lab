@@ -1,0 +1,2 @@
+Multiprogramming refers to running more than one process simultaneously. 
+In this stage, an initial version of the Round Robin scheduler used in eXpOS is implemented.
