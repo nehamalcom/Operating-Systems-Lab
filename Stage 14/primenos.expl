@@ -1,0 +1,26 @@
+//primenos
+int main()
+{
+decl
+	int num,i,flag,temp;
+enddecl
+begin
+	num=2;
+	while(num<=100)do
+		flag=1;
+		i=2;
+		while(i<=(num/2))do
+			if((num%i)==0)then
+				flag=0;
+				break;
+			endif;
+			i=i+1;
+		endwhile;
+		if(flag==1)then
+			temp=exposcall("Write",-2,num);
+		endif;
+		num=num+1;
+	endwhile;
+	return 0;
+end
+}
