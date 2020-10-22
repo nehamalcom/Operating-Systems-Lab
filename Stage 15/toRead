@@ -1,0 +1,5 @@
+In this stage, we see the terminal is shared by the processes for writing. 
+The OS maintains a data structure called the Terminal Status Table. 
+The Terminal Status table contains details of the process that has acquired the terminal. (Since there is only one terminal in the system, only one process is allowed to acquire the terminal at a time.) 
+A flag named STATUS in the terminal status table indicates whether the terminal is available or not. 
+When a process acquires the terminal, the PID of the process is updated in the terminal status table. 
