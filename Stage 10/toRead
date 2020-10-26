@@ -1,0 +1,4 @@
+In Stage 7, we wrote a user program and used the BRKP instruction to view the result in debug mode. 
+In this stage, we will modify the program such that the result is printed directly to the terminal. 
+The terminal print is acheived by issuing a write system call from the user program. 
+The write system call is serviced by interrupt routine 7. 
