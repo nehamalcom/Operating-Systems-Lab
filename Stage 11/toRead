@@ -1,0 +1,6 @@
+ExpL is a high level language in which you can write high level application programs. 
+A compiler for ExpL supplied to you along with the eXpOS package will generate target code compatible with the eXpOS specification. 
+ExpL permits application programs to call the function exposcall() that implements the high level library interface to the OS. 
+Application programs must use this library interface to invoke eXpOS system calls. 
+Certain built-in functions of the ExpL language (Alloc, Free and Initialize - these functions handle ExpL dynamic memory management) are also implemented as ExpL library routines. 
+Note that the only way to invoke an eXpOS system call from a high level ExpL program is to use the exposcall() function. 
