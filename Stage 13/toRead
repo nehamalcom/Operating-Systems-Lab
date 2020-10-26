@@ -1,0 +1,10 @@
+According to the memory organization of eXpOS, the OS startup code is provided with only one memory page (page number 1). 
+However, the code for OS startup may exceed one page due to initialization of several OS data structures. 
+So we design a module for the purpose of OS initialization. This module will be called the Boot module (module 7). 
+The Boot module is invoked from the OS startup code. The OS startup code hand-creates the idle process, initializes the SP register to the kernel stack of the idle process, loads module 7 in memory and then invokes the boot module (using the stack of the IDLE process). 
+Upon return from the boot module, the OS startup code initiates user mode execution of the idle process. 
+Note that in the previous stage, we had scheduled the INIT process first, before executing the IDLE pocess. 
+Starting from the present stage, the idle process will be scheduled first. 
+All further scheduling of processes will be controlled by the timer interrupt routine and a scheduler module, which will be discussed in the next stage. 
+The Boot module is responsible for initialization of all eXpOS data structures, user processes and also loading of all interrupt routines and modules. 
+You will not modify the OS startup code written in this stage in subsequent stages. 
