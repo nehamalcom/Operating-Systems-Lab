@@ -1,0 +1,4 @@
+eXpOS requires that when the OS enters an interrupt handler that runs in kernel mode, the interrupt handler must switch to a different stack. 
+This requirement is to prevent user level “hacks” into the kernel through the stack. 
+In the previous stage, though you entered the timer interrupt service routine in the kernel mode, you did not change the stack. 
+In this stage, this will be done.
