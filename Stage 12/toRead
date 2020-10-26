@@ -1,0 +1,5 @@
+This stage introduces you to multi-programming. You will load two processes into memory during OS bootstrap and put them on concurrent execution. 
+For this, you need to modify the timer interrupt handler to switch between the two processes.
+We will use the the same init process as in stage 11. A second process called an idle process will also be set up in memory for execution during OS startup. 
+The idle process simply contains an infinite loop.
+You will modify the timer to implement a very primitive scheduler which shares the machine between the two processes.
