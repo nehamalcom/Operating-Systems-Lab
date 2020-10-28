@@ -1,0 +1,7 @@
+
+
+If the XSM simulator is run with the the timer set to some value - say 20, then every time the machine completes execution of 20 instructions in user mode, the timer device will send a hardware signal that interrupts machine execution. 
+The machine will push the IP value of the next user mode instruction to the stack and pass control to the the timer interrupt handler at physical address 2048.
+eXpOS design given here requires you to load a timer interrupt routine into two pages of memory starting at memory address 2048 (pages 4 and 5). 
+The routine must be written by you and loaded into disk blocks 17 and 18 so that the OS startup code can load this code into memory pages 4 and 5.
+In this stage, we will run the machine with timer on and write a simple timer interrupt handler. 
