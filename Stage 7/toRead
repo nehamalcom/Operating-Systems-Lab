@@ -1,0 +1,3 @@
+The library provides a common code interface for all system calls. 
+This means, to invoke a system call, the application can call the corresponding library function and the library will in turn invoke the system call and return values back to the application. 
+The library also implements some functions like dynamic memory allocation and de-allocation from the heap area. 
