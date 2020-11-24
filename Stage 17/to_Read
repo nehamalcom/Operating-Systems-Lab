@@ -1,0 +1,7 @@
+Exec is the "program loader" of eXpOS. 
+Exec takes as input a filename. It first checks whether the file is a valid eXpOS executable stored in the XSM disk, adhering to the XEXE format. 
+If so, Exec destroys the invoking process, loads the executable file from the disk, and sets up the program for execution as a process. 
+A successful exec operation results in the termination of the invoking process and hence never returns to it.
+Name of the executable file is the only input to the exec system call. 
+This file should be present in the disk before starting the machine. 
+The inode index of this file can be obtained by going through the memory copy of the inode table.
