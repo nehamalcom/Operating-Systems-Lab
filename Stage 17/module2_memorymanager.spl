@@ -1,0 +1,55 @@
+alias functionNum R1;
+
+if(functionNum==GET_FREE_PAGE)then
+	alias PID R11;
+	alias processTableEntry R12;
+	alias i R13;
+
+	PID = [SYSTEM_STATUS_TABLE+1];
+	processTableEntry = PROCESS_TABLE+PID*16;
+
+	[SYSTEM_STATUS_TABLE+3] = [SYSTEM_STATUS_TABLE+3] + 1;
+
+	while([SYSTEM_STATUS_TABLE+2] == 0)
+	do
+	[processTableEntry+4] = WAIT_MEM;
+	call CONTEXT_SWITCH;
+	endwhile;
+
+	[SYSTEM_STATUS_TABLE+3] = [SYSTEM_STATUS_TABLE+3] - 1;
+
+	[SYSTEM_STATUS_TABLE+2] = [SYSTEM_STATUS_TABLE+2] - 1;
+
+	i = 0;
+	while(i<NUM_MEM_PAGES)
+	do
+	if([MEMORY_FREE_LIST+i] == 0)
+	then
+	    [MEMORY_FREE_LIST+i] = 1;
+	    R0 = i;
+	    return;
+	endif;
+	i = i+1;
+	endwhile;
+
+	breakpoint;
+	R0 = -1;   // This should never happen
+	return;
+
+endif;
+
+if(functionNum==RELEASE_PAGE)then
+	alias pageNum R2;
+	[MEMORY_FREE_LIST+pageNum]=[MEMORY_FREE_LIST+pageNum]-1;
+	[SYSTEM_STATUS_TABLE+2]=[SYSTEM_STATUS_TABLE+2]+1;
+	alias i R9;
+	i=0;
+	while(i<MAX_PROC_NUM)do
+		if([PROCESS_TABLE+i*16+4]==WAIT_MEM)then
+			[PROCESS_TABLE+i*16+4]=READY;
+		endif;
+		i=i+1;
+	endwhile;
+	return;
+endif;
+

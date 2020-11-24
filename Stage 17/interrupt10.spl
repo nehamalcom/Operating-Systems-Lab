@@ -1,0 +1,21 @@
+breakpoint;
+alias currentPID R10;
+currentPID=[SYSTEM_STATUS_TABLE+1];
+[PROCESS_TABLE+currentPID*16+4]=TERMINATED;
+alias check R11;
+alias ctr R12;
+check=0;
+ctr=1;
+while(ctr<MAX_PROC_NUM)do
+	if([PROCESS_TABLE+ctr*16+4]!=TERMINATED)then
+		check=1;
+		break;
+	endif;
+	ctr=ctr+1;
+endwhile;
+breakpoint;
+if(check==0)then
+	halt;
+else
+	call CONTEXT_SWITCH;
+endif;
