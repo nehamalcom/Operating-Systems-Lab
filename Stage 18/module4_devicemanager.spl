@@ -1,0 +1,64 @@
+alias functionNum R1;
+alias currentPID R2;
+alias word R3;
+alias virtAddr R4;
+alias phyAddr R5;
+if(functionNum==TERMINAL_WRITE)then
+	multipush(R1,R2,R3);
+	R1=ACQUIRE_TERMINAL;
+	R2=currentPID;
+	call RESOURCE_MANAGER;
+	multipop(R1,R2,R3);
+	print word;
+	multipush(R1,R2,R3);
+	R1=RELEASE_TERMINAL;
+	R2=currentPID;
+	call RESOURCE_MANAGER;
+	multipop(R1,R2,R3);
+	return;
+endif;
+if(functionNum==TERMINAL_READ)then
+	alias wordAddr R3;
+	multipush(R1,R2,R3);
+	R1=ACQUIRE_TERMINAL;
+	R2=currentPID;
+	call RESOURCE_MANAGER;
+	multipop(R1,R2,R3);
+	read;
+	[PROCESS_TABLE+currentPID*16+4]=WAIT_TERMINAL;
+	multipush(R1,R2,R3);
+	call CONTEXT_SWITCH;
+	multipop(R1,R2,R3);
+	virtAddr=wordAddr;
+	call AddrTranslation;
+	[phyAddr]=[PROCESS_TABLE+currentPID*16+8];
+	return;
+endif;
+if(functionNum==DISK_LOAD)then
+	alias pageNum R3;
+	alias blockNum R4;
+	multipush(R1,R2,R3,R4);
+	R1=ACQUIRE_DISK;
+	print("diskloaddev");
+	call RESOURCE_MANAGER;
+	multipop(R1,R2,R3,R4);
+	[DISK_STATUS_TABLE+1]=0;
+	[DISK_STATUS_TABLE+2]=pageNum;
+	[DISK_STATUS_TABLE+3]=blockNum;
+	load(pageNum,blockNum);
+	[PROCESS_TABLE+currentPID*16+4]=WAIT_DISK;
+	print("okay");
+	multipush(R1,R2,R3,R4);
+	call CONTEXT_SWITCH;
+	multipop(R1,R2,R3,R4);
+	print("enddevice");
+	return;
+endif;
+	
+return;
+AddrTranslation:
+	R9=virtAddr/512;
+	R9=[PTBR+R9*2];
+	phyAddr=R9*512+(virtAddr%512);
+	return;
+
