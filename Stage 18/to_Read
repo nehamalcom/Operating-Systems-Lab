@@ -1,0 +1,5 @@
+In this stage, we will introduce disk interrupt handling in XSM. 
+In the previous stage, we used the loadi statement to load a disk block into a memory page. 
+When the loadi statement (immediate load) is used for loading, the machine will execute the next instruction only after the block transfer is complete by the disk controller. 
+A process can use the load statement instead of loadi to load a disk block to a memory page. 
+The load statement in SPL translates to LOAD instruction in XSM. 
