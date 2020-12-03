@@ -1,0 +1,22 @@
+fdisk
+load --os ../spl/spl-programs/os_startup_main.xsm
+load --exhandler ../spl/spl-programs/exhandler.xsm
+load --int=console ../spl/spl-programs/console_interrupt.xsm
+load --int=6 ../spl/spl-programs/interrupt6.xsm
+load --int=7 ../spl/spl-programs/interrupt7.xsm
+load --int=9 ../spl/spl-programs/interrupt9.xsm
+load --int=10 ../spl/spl-programs/interrupt10.xsm
+load --int=timer ../spl/spl-programs/timer_round_robin.xsm
+load --init ../expl/samples/shell.xsm
+load --idle ../expl/samples/idle.xsm
+load --exec ../expl/samples/even.xsm
+load --exec ../expl/samples/odd.xsm
+load --exec ../expl/samples/gcd.xsm
+load --exec ../expl/samples/linklist.xsm
+load --module 0 ../spl/spl-programs/module0_resourcemanager.xsm
+load --module 1 ../spl/spl-programs/module1_processmanager.xsm
+load --module 2 ../spl/spl-programs/module2_memorymanager.xsm
+load --module 4 ../spl/spl-programs/module4_devicemanager.xsm
+load --module 5 ../spl/spl-programs/module5_scheduler.xsm
+load --module 7 ../spl/spl-programs/module7_boot.xsm
+load --int=disk ../spl/spl-programs/disk_interrupt.xsm

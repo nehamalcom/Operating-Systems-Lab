@@ -1,0 +1,83 @@
+alias functionNum R1;
+alias PID R2;
+alias userAreaPage R9;
+
+
+
+if(functionNum==FREE_USER_AREA_PAGE)then
+	userAreaPage=[PROCESS_TABLE+PID*16+11];
+	multipush(R1,R2);
+	R1=RELEASE_PAGE;
+	R2=userAreaPage;
+	call MEMORY_MANAGER;
+	multipop(R1,R2);
+	return;
+endif;
+if(functionNum==EXIT_PROCESS)then
+	PID=[SYSTEM_STATUS_TABLE+1];
+	multipush(R1,R2,R9);
+	R1=FREE_PAGE_TABLE;
+	R2=PID;
+	call PROCESS_MANAGER;
+	R1=FREE_USER_AREA_PAGE;
+	R2=PID;
+	call PROCESS_MANAGER;
+	multipop(R1,R2,R9);
+	[PROCESS_TABLE+PID*16+4]=TERMINATED;
+	return;
+endif;
+
+if(functionNum==FREE_PAGE_TABLE)then
+	
+	alias pageTable R11;
+	pageTable=PAGE_TABLE_BASE+PID*20;
+	[pageTable+0]=-1;
+	[pageTable+1]="0000";
+	[pageTable+2]=-1;
+	[pageTable+3]="0000";
+	alias i R9;
+	i=0;
+	while(i<20)do
+		if([pageTable+i]!=-1)then
+			multipush(R1,R2,R9);
+			R1=RELEASE_PAGE;
+			R2=[pageTable+i];
+			call MEMORY_MANAGER;
+			multipop(R1,R2,R9);
+			[pageTable+i]=-1;
+			[pageTable+i+1]="0000";
+		endif;
+		i=i+2;
+	endwhile;
+	i=2;
+	//invalidating the heap pages
+	while(i<4)do
+		if([DISK_MAP_TABLE+PID*10+i]!=-1)then
+			multipush(R1,R2,R9,R11);
+			R1=RELEASE_BLOCK;
+			R2=[DISK_MAP_TABLE+PID*10+i];
+			call MEMORY_MANAGER;
+			multipop(R1,R2,R9,R11);
+		endif;
+		i=i+1;
+	endwhile;
+	//do the same for stack pages
+	i=8;
+	while(i<10)do
+		if([DISK_MAP_TABLE+PID*10+i]!=-1)then
+			multipush(R1,R2,R9,R11);
+			R1=RELEASE_BLOCK;
+			R2=[DISK_MAP_TABLE+PID*10+i];
+			call MEMORY_MANAGER;
+			multipop(R1,R2,R9,R11);
+		endif;
+		i=i+1;
+	endwhile;
+	i=0;
+	while(i<10)do
+		[DISK_MAP_TABLE+PID*10+i]=-1;
+		i=i+1;
+	endwhile;
+	return;
+endif;
+		
