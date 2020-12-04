@@ -1,0 +1,159 @@
+//fork system call
+breakpoint;
+
+alias pPID R3;
+alias processTableEntry R4;
+alias cPID R5;
+alias pageTableEntry R6;
+alias userSP R7;
+alias virtAddr R8;
+alias phyAddr R9;
+alias cProcessTableEntry R10;
+alias cPageTableEntry R11;
+
+pPID=[SYSTEM_STATUS_TABLE+1];
+processTableEntry=PROCESS_TABLE+pPID*16;
+pageTableEntry=PAGE_TABLE_BASE+pPID*20;
+
+[processTableEntry+9] = 8; //mode set to interrupt 8 fork system call
+
+//setting up kernel stack
+userSP = SP;
+[processTableEntry + 13] = SP;
+SP = [processTableEntry+11]*512 - 1;
+
+//getting new PID for child process
+multipush(R3,R4,R5,R6,R7,R8,R9);
+R1=GET_PCB_ENTRY;
+call PROCESS_MANAGER;
+multipop(R3,R4,R5,R6,R7,R8,R9);
+cPID=R0;
+//if there are already 16 processes running
+if(cPID==-1)then
+	[processTableEntry+9] = 0;
+	//switching to user stack
+	[processTableEntry+13]=SP;
+	SP=userSP;
+	//return pointer to -1
+	virtAddr=userSP-1;
+	call AddrTranslation;
+	[phyAddr]=-1;
+	ireturn;
+endif;
+//if heap is not allocated
+if([PTBR+16]==-1)then
+	multipush(R3,R4,R5,R6,R7,R8,R9);
+	R1=GET_FREE_PAGE;
+	call MEMORY_MANAGER;
+	multipop(R3,R4,R5,R6,R7,R8,R9);
+	[PTBR+16]=R0;
+	[PTBR+17]="1110";
+	multipush(R3,R4,R5,R6,R7,R8,R9);
+	R1=GET_FREE_PAGE;
+	call MEMORY_MANAGER;
+	multipop(R3,R4,R5,R6,R7,R8,R9);
+	[PTBR+18]=R0;
+	[PTBR+19]="1110";
+	
+endif;
+//stack for child process
+multipush(R3,R4,R5,R6,R7,R8,R9);
+R1=GET_FREE_PAGE;
+call MEMORY_MANAGER;
+multipop(R3,R4,R5,R6,R7,R8,R9);
+[PAGE_TABLE_BASE+20*cPID+2*8+0]=R0;
+[PAGE_TABLE_BASE+20*cPID+2*8+1]="1110";
+multipush(R3,R4,R5,R6,R7,R8,R9);
+R1=GET_FREE_PAGE;
+call MEMORY_MANAGER;
+multipop(R3,R4,R5,R6,R7,R8,R9);
+[PAGE_TABLE_BASE+20*cPID+2*9+0]=R0;
+[PAGE_TABLE_BASE+20*cPID+2*9+1]="1110";
+
+//initialise process table entries for child
+cProcessTableEntry=PROCESS_TABLE+cPID*16;
+[cProcessTableEntry+3]=[processTableEntry+3]; //userid
+[cProcessTableEntry+6]=[processTableEntry+6]; //swapflag
+[cProcessTableEntry+7]=[processTableEntry+7]; //inodeindex
+[cProcessTableEntry+10]=[processTableEntry+10]; //userareaswapstatus
+[cProcessTableEntry+13]=[processTableEntry+13]; //uptr
+
+[cProcessTableEntry+0]=0; //tick
+[cProcessTableEntry+2]=pPID; //parentpid
+[cProcessTableEntry+4]=CREATED; //state
+[cProcessTableEntry+9]=0; //mode
+[cProcessTableEntry+12]=0; //kptr
+
+//new user area page for child
+multipush(R3,R4,R5,R6,R7,R8,R9);
+R1=GET_FREE_PAGE;
+call MEMORY_MANAGER;
+multipop(R3,R4,R5,R6,R7,R8,R9);
+[cProcessTableEntry+11]=R0;
+
+//per process disk map table, copying from parent
+R3=0;
+while(R3<10)do
+	[DISK_MAP_TABLE+cPID*10+R3]=[DISK_MAP_TABLE+pPID*10+R3];
+	R3=R3+1;
+endwhile;
+
+//page table initialization for child, not stack since we already allocated
+cPageTableEntry=PAGE_TABLE_BASE+cPID*20;
+R3=0;
+while(R3<8)do
+	[cPageTableEntry+R3+0]=[pageTableEntry+R3+0];
+	[MEMORY_FREE_LIST+[pageTableEntry+0]]=[MEMORY_FREE_LIST+[pageTableEntry+0]]+1;
+	[cPageTableEntry+R3+1]=[pageTableEntry+R3+1];
+	R3=R3+1;
+endwhile;
+
+//page table with fresh pages for stack of child process already allocated and initialised now to copy the user stack to it
+//stack page 1
+virtAddr=[pageTableEntry+8*2]*512;
+call AddrTranslation;
+R12=phyAddr/512; //stack page of parent
+virtAddr=[cPageTableEntry+8*2]*512;
+call AddrTranslation;
+R13=phyAddr/512; //stack page of child
+R14=0;
+while(R14<512)do
+	[R13+R14]=[R12+R14];
+	R14=R14+1;
+endwhile;
+//stack page 2
+virtAddr=[pageTableEntry+9*2]*512;
+call AddrTranslation;
+R12=phyAddr/512; //stack page of parent
+virtAddr=[cPageTableEntry+9*2]*512;
+call AddrTranslation;
+R13=phyAddr/512; //stack page of child
+R14=0;
+while(R14<512)do
+	[R13+R14]=[R12+R14];
+	R14=R14+1;
+endwhile;
+
+//BP to the top of child kernel stack
+[cProcessTableEntry+12]=1;
+[[cProcessTableEntry+11]*512]=BP;
+
+//setting up return values in the stacks
+virtAddr=[cProcessTableEntry+13]-1;
+call AddrTranslation;
+[phyAddr]=0; //child's return value set to 0
+virtAddr=[processTableEntry+13]-1;
+call AddrTranslation;
+[phyAddr]=cPID; //parent's return value is child pid
+
+//resetting mode of parent and switching to user stack
+[processTableEntry+9]=0;
+SP=[processTableEntry+13];
+ireturn;
+
+AddrTranslation:
+	R15=virtAddr/512;
+	R15=[PTBR+2*R15];
+	phyAddr=R15*512+virtAddr%512;
+	return;
+
