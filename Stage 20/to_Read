@@ -1,0 +1,1 @@
+In this stage, we see how to create a new process using the fork system call and how to terminate a process using the exit system call.
