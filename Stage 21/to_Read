@@ -1,0 +1,7 @@
+In this stage, we will add support for process synchronization using Wait and Signal system calls to eXpOS. With the help of these system calls, we will design a more advanced shell program. We will also implement Getpid and Getppid system calls.
+
+When a process executes the Wait system call, its execution is suspended till the process whose PID is given as argument to Wait terminates or executes the Signal system call. The process that enters Wait sets its state to WAIT_PROCESS and invokes the scheduler.
+
+A process executes the Signal system call to wake up all the processes waiting for it. If a process terminates without invoking Signal, then Exit system call voluntarily wakes up all the processes waiting for it.
+
+When several processes running concurrently share a resource (shared memory or file) it is necessary to synchronize access to the shared resource to avoid data inconsistency. Wait and Signal form one pair of primitives that help to achieve synchronization. In general, synchronization primitives help two co-operating processes to ensure that one process stops execution at certain program point, and waits for the other to issue a signal, before continuing execution. 
