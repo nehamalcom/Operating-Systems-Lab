@@ -1,0 +1,29 @@
+int main()
+{
+decl
+	int temp, ch;
+	string command;
+enddecl
+begin
+	ch=1;
+	while(ch==1)do
+		
+		temp=exposcall("Write",-2,"enter>");
+		temp=exposcall("Read",-1,command);
+		if(command=="shutdown")then
+			temp=exposcall("Shutdown");
+		endif;
+		temp=exposcall("Fork");
+		if(temp==0)then
+			temp=exposcall("Exec",command);
+			if(temp==-1)then
+				temp=exposcall("Write",-2,"bad command");
+			endif;
+			ch=0;
+		else
+			temp=exposcall("Wait",temp);
+		endif;
+	endwhile;
+	return 0;
+end
+}

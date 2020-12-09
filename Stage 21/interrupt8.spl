@@ -1,0 +1,187 @@
+//fork system call
+breakpoint;
+
+alias semaphoreIndex R2;
+alias pPID R3;
+alias pProcessTableEntry R4;
+alias pPageTableEntry R5;
+alias cPID R6;
+alias cProcessTableEntry R7;
+alias cPageTableEntry R8;
+alias pUserSP R9;
+alias virtAddr R10;
+alias phyAddr R11;
+
+pPID=[SYSTEM_STATUS_TABLE+1];
+pProcessTableEntry=PROCESS_TABLE+pPID*16;
+pPageTableEntry=PAGE_TABLE_BASE+pPID*20;
+
+//switching stacks and setting mode to 8
+[pProcessTableEntry+9]=8;
+[pProcessTableEntry+13]=SP;
+pUserSP=SP;
+SP=[pProcessTableEntry+11]*512-1;
+
+multipush(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+R1=GET_PCB_ENTRY;
+call PROCESS_MANAGER;
+multipop(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+cPID=R0;
+
+if(cPID==-1)then
+	virtAddr=pUserSP-1;
+	call AddrTranslation;
+	[phyAddr]=-1;
+	[pProcessTableEntry+9]=0;
+	SP=[pProcessTableEntry+13];
+	ireturn;
+endif;
+
+cProcessTableEntry=PROCESS_TABLE+cPID*16;
+cPageTableEntry=PAGE_TABLE_BASE+cPID*20;
+
+//0,1;2,3 library
+//4,5;6,7 heap
+//8,9;10,11;12,13;14,15 code
+//16,17;18,19 stack
+
+if([PTBR+4]==-1)then //heap not allocated
+	multipush(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+	R1=GET_FREE_PAGE;
+	call MEMORY_MANAGER;
+	multipop(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+	[PTBR+4]=R0;
+	[PTBR+5]="1110";
+	multipush(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+	R1=GET_FREE_PAGE;
+	call MEMORY_MANAGER;
+	multipop(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+	[PTBR+6]=R0;
+	[PTBR+7]="1110";
+endif;
+
+//initialise process table entries for child
+[cProcessTableEntry+3]=[pProcessTableEntry+3]; //userid
+[cProcessTableEntry+6]=[pProcessTableEntry+6]; //swapflag
+[cProcessTableEntry+7]=[pProcessTableEntry+7]; //inodeindex
+[cProcessTableEntry+10]=[pProcessTableEntry+10]; //userareaswapstatus
+[cProcessTableEntry+13]=[pProcessTableEntry+13]; //uptr
+
+[cProcessTableEntry+0]=0; //tick
+[cProcessTableEntry+2]=pPID; //parentpid
+[cProcessTableEntry+4]=CREATED; //state
+[cProcessTableEntry+9]=0; //mode
+[cProcessTableEntry+12]=0; //kptr
+
+//allocating fresh user area page
+multipush(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+R1=GET_FREE_PAGE;
+call MEMORY_MANAGER;
+multipop(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+[cProcessTableEntry+11]=R0;
+
+//copying the per process disk map table of parent to child
+R0=0;
+while(R0<10)do
+	[DISK_MAP_TABLE+cPID*10+R0]=[DISK_MAP_TABLE+pPID*10+R0];
+	R0=R0+1;
+endwhile;
+
+//copying per process resource table of parent to child
+R0=0;
+while(R0<8)do
+	[[PROCESS_TABLE+cPID*16+11]*512+RESOURCE_TABLE_OFFSET+2*R0+0]=[[PROCESS_TABLE+pPID*16+11]*512+RESOURCE_TABLE_OFFSET+2*R0+0];
+	[[PROCESS_TABLE+cPID*16+11]*512+RESOURCE_TABLE_OFFSET+2*R0+1]=[[PROCESS_TABLE+pPID*16+11]*512+RESOURCE_TABLE_OFFSET+2*R0+1];
+	if([[PROCESS_TABLE+cPID*16+11]*512+RESOURCE_TABLE_OFFSET+2*R0+0]==SEMAPHORE)then
+		semaphoreIndex=[[PROCESS_TABLE+cPID*16+11]*512+RESOURCE_TABLE_OFFSET+2*R0+1];
+		[SEMAPHORE_TABLE+semaphoreIndex*4+1]=[SEMAPHORE_TABLE+semaphoreIndex*4+1]+1;
+	endif;
+	R0=R0+1;
+endwhile;
+
+//initialising page table of child
+//library,heap and code pages are shared
+	
+//0,1;2,3 library
+//4,5;6,7 heap
+//8,9;10,11;12,13;14,15 code
+//16,17;18,19 stack
+
+R0=0;
+while(R0<20)do
+	[PAGE_TABLE_BASE+cPID*20+R0]=[PTBR+R0];
+	[MEMORY_FREE_LIST+[PTBR+R0]]=[MEMORY_FREE_LIST+[PTBR+R0]]+1;
+	[PAGE_TABLE_BASE+cPID*20+R0+1]=[PTBR+R0+1];
+	R0=R0+2;
+endwhile;
+
+//now for stack, allocating fresh pages to child
+multipush(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+R1=GET_FREE_PAGE;
+call MEMORY_MANAGER;
+multipop(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+[PAGE_TABLE_BASE+cPID*20+16]=R0;
+[PAGE_TABLE_BASE+cPID*20+17]="0110";
+multipush(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+R1=GET_FREE_PAGE;
+call MEMORY_MANAGER;
+multipop(R3,R4,R5,R6,R7,R8,R9,R10,R11);
+[PAGE_TABLE_BASE+cPID*20+18]=R0;
+[PAGE_TABLE_BASE+cPID*20+19]="0110";
+
+//now to copy word to word contents of user stack from parent to child
+//page8
+alias pPagePhy R2;
+alias cPagePhy R1;
+virtAddr=8*512;
+R0=virtAddr/512;
+R0=[PAGE_TABLE_BASE+cPID*20+2*R0];
+phyAddr=(R0*512)+(virtAddr%512);
+cPagePhy=phyAddr;
+virtAddr=8*512;
+R0=virtAddr/512;
+R0=[PAGE_TABLE_BASE+pPID*20+2*R0];
+phyAddr=(R0*512)+(virtAddr%512);
+pPagePhy=phyAddr;
+R0=0;
+while(R0<512)do
+	[cPagePhy+R0]=[pPagePhy+R0];
+	R0=R0+1;
+endwhile;
+//page9
+virtAddr=9*512;
+R0=virtAddr/512;
+R0=[PAGE_TABLE_BASE+cPID*20+2*R0];
+phyAddr=(R0*512)+(virtAddr%512);
+cPagePhy=phyAddr;
+virtAddr=9*512;
+R0=virtAddr/512;
+R0=[PAGE_TABLE_BASE+pPID*20+2*R0];
+phyAddr=(R0*512)+(virtAddr%512);
+pPagePhy=phyAddr;
+R0=0;
+while(R0<512)do
+	[cPagePhy+R0]=[pPagePhy+R0];
+	R0=R0+1;
+endwhile;
+
+//storing bp to top of child kernel stack
+[cProcessTableEntry+12]=1;
+[[cProcessTableEntry+11]*512]=BP;
+virtAddr=[cProcessTableEntry+13]-1;
+R0=virtAddr/512;
+R0=[PAGE_TABLE_BASE+cPID*20+2*R0];
+phyAddr=(R0*512)+(virtAddr%512);
+[phyAddr]=0; //child
+virtAddr=pUserSP-1;
+call AddrTranslation;
+[phyAddr]=cPID; //parent
+[pProcessTableEntry+9]=0;
+SP=[pProcessTableEntry+13];
+ireturn;
+
+AddrTranslation:
+	R9=virtAddr/512;
+	phyAddr=[PTBR+2*R9]*512+virtAddr%512;
+	return;
+

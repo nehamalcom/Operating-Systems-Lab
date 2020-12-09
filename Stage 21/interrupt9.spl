@@ -1,0 +1,127 @@
+breakpoint;
+alias processTableEntry R8;
+alias inodeEntry R9;
+alias PID R10;
+alias userSP R11;
+alias fileName R12;
+alias ctr R13;
+alias virtAddr R14;
+alias phyAddr R15;
+
+//setting up kernel stack
+PID = [SYSTEM_STATUS_TABLE+1];
+processTableEntry=PROCESS_TABLE+PID*16;
+userSP = SP;
+[processTableEntry + 13] = SP;
+SP = [processTableEntry+11]*512 - 1;
+[processTableEntry+9] = 9;
+
+//takes filename as argument
+virtAddr = userSP-4;
+call AddrTranslation;
+fileName = [phyAddr];
+
+//initialising disk map table for the process
+ctr=0;
+while(ctr<10)do
+	[DISK_MAP_TABLE+PID*10+ctr]=-1;
+	ctr=ctr+1;
+endwhile;
+
+//searching for file using INODE TABLE
+ctr=0;
+while(ctr<MAX_FILE_NUM)do
+	if([INODE_TABLE+ctr*16+1] == fileName)then
+		break;
+	endif;
+	ctr = ctr+1;
+endwhile;
+//if file not found or is not executable
+if((ctr==MAX_FILE_NUM) || ([INODE_TABLE+ctr*16+0] != EXEC))then
+	virtAddr = userSP - 1;
+	call AddrTranslation;
+	[phyAddr] = -1;
+	[processTableEntry + 9] = 0;
+	SP = [processTableEntry+ 13];
+	ireturn;
+endif;
+inodeEntry = ctr;
+print(ctr);
+
+//exit the current process
+multipush(R9,R10,R11,R12,R13,R14,R15);
+R1=EXIT_PROCESS;
+R2=PID;
+call PROCESS_MANAGER;
+multipop(R9,R10,R11,R12,R13,R14,R15);
+
+//same user area page is used, increment memory free list entry and decrement memory free count
+[MEMORY_FREE_LIST + [processTableEntry + 11]] = [MEMORY_FREE_LIST + [processTableEntry + 11]] + 1;
+[SYSTEM_STATUS_TABLE + 2] = [SYSTEM_STATUS_TABLE + 2] - 1;
+
+//set to start of user area page
+SP = [processTableEntry + 11]*512 - 1;
+[processTableEntry + 4] = RUNNING;
+
+//library
+[PTBR+0]=63;
+[PTBR+1]="0100";
+[PTBR+2]=64;
+[PTBR+3]="0100";
+
+//heap (it is unallocated right now)
+[PTBR+4]=-1;
+[PTBR+5]="0010";
+[PTBR+6]=-1;
+[PTBR+7]="0010";
+
+//stack
+multipush(R8,R9,R10,R11,R12,R13,R14,R15);
+R1 = GET_FREE_PAGE;
+call MEMORY_MANAGER;
+[PTBR+16] = R0;
+[PTBR+17] = "0110";
+R1 = GET_FREE_PAGE;
+call MEMORY_MANAGER;
+multipop(R8,R9,R10,R11,R12,R13,R14,R15);
+[PTBR+18] = R0;
+[PTBR+19] = "0110";
+
+//code (in disk map table, code page are 4,5,6,7)
+ctr=0;
+while((ctr<=([INODE_TABLE+inodeEntry*16+2])/PAGE_SIZE)&&(ctr<4))do
+	[DISK_MAP_TABLE+PID*10+4+ctr]=[INODE_TABLE+inodeEntry*16+8+ctr];
+	ctr=ctr+1;
+endwhile;
+
+multipush(R8,R9,R10,R11,R12,R13,R14,R15);
+R1 = GET_CODE_PAGE;
+R2= [DISK_MAP_TABLE+PID*10+4];
+call MEMORY_MANAGER;
+multipop(R8,R9,R10,R11,R12,R13,R14,R15);
+[PTBR+8]=R0;
+[PTBR+9]="0100";
+
+print("inodeentry");
+print(inodeEntry);
+
+// Initialize per process resource table for init
+R0 = [PROCESS_TABLE+PID*16+11]; // UAreaPage
+ctr = 0;
+while(ctr<8)do
+    [R0*512 + 512 - 16 + ctr*2] = -1;
+    [R0*512 + 512 - 16 + ctr*2 + 1] = -1;
+    ctr = ctr+ 1;
+endwhile;
+[[PTBR+16]*512] = [[PTBR+8]*512 + 1];
+SP=8*512;
+[processTableEntry + 9]=0;
+ireturn;
+
+AddrTranslation:
+	R15=virtAddr/512;
+	R15=[PTBR+2*R15];
+	phyAddr=R15*512+virtAddr%512;
+	return;
+
+

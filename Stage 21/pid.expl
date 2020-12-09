@@ -1,0 +1,14 @@
+int main()
+{
+decl
+	int temp, pid, ppid, n;
+enddecl
+begin
+	pid = exposcall("Getpid");
+	ppid = exposcall("Getppid");
+	temp = exposcall("Write", -2, "PPID PID");
+	n = (ppid*100) +pid;
+	temp = exposcall("Write", -2, n);
+	return 0;
+end
+}
