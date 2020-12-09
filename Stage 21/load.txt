@@ -5,7 +5,7 @@ load --exhandler ../spl/spl-programs/exhandler.xsm
 load --int=console ../spl/spl-programs/console_interrupt.xsm
 load --int=6 ../spl/spl-programs/interrupt6.xsm
 load --int=7 ../spl/spl-programs/interrupt7.xsm
-load --int=8 ../stage22/int8_fork.xsm
+load --int=8 ../spl/spl-programs/interrupt8.xsm
 load --int=9 ../spl/spl-programs/interrupt9.xsm
 load --int=10 ../spl/spl-programs/interrupt10.xsm
 load --int=11 ../spl/spl-programs/interrupt11.xsm
