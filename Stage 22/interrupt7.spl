@@ -1,0 +1,46 @@
+breakpoint;
+alias PID R10;
+alias userSP R11;
+alias fileDescriptor R12;
+alias word R13;
+alias virtAddr R14;
+alias phyAddr R15;
+PID = [SYSTEM_STATUS_TABLE+1];
+userSP=SP;
+//setting mode to write system call
+[PROCESS_TABLE+PID*16+9]=5;
+//changing stack from user to kernel
+[PROCESS_TABLE+PID*16+13]=SP;
+SP=[PROCESS_TABLE+PID*16+11]*512-1;
+
+virtAddr=userSP-4;
+call AddrTranslation;
+fileDescriptor=[phyAddr];
+
+if(fileDescriptor!=-2)then
+	virtAddr=userSP-1;
+	call AddrTranslation;
+	[phyAddr]=-1;
+else
+	virtAddr=userSP-3;
+	call AddrTranslation;
+	word=[phyAddr];
+	multipush(R10,R11,R12,R13,R14,R15);
+	R1=TERMINAL_WRITE;
+	R2=PID;
+	R3=word;
+	call DEVICE_MANAGER;
+	multipop(R10,R11,R12,R13,R14,R15);
+	virtAddr=userSP-1;
+	call AddrTranslation;
+	[phyAddr]=0;
+endif;
+
+SP=[PROCESS_TABLE+PID*16+13];
+ireturn;
+
+AddrTranslation:
+	R9=virtAddr/512;
+	phyAddr=[PTBR+2*R9]*512+virtAddr%512;
+	return;
+

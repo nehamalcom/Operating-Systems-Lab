@@ -1,0 +1,109 @@
+breakpoint;
+//interrupt 13 semget 17 and semrelease 18
+
+alias userSP R5;
+alias virtAddr R6;
+alias phyAddr R7;
+alias sysCallNum R8;
+alias PID R9;
+alias resourceTableEntry R10;
+alias semaphoreIndex R11;
+
+//switching to kernel stack
+userSP=SP;
+[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+13]=SP;
+SP=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+11]*512-1;
+
+virtAddr=userSP-5;
+PID=[SYSTEM_STATUS_TABLE+1];
+call AddrTranslation;
+sysCallNum=[phyAddr];
+
+//SEMGET
+if(sysCallNum==17)then
+	[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=17; //mode
+	resourceTableEntry=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+11]*512+RESOURCE_TABLE_OFFSET;
+	R0=0;
+	//going through per process resource table
+	while(R0<8)do
+		if([resourceTableEntry+R0]==-1)then
+			break;
+		endif;
+		R0=R0+2;
+	endwhile;
+	//if maximum semaphores or files already in process
+	if(R0==8)then
+		virtAddr=userSP-1;
+		PID=[SYSTEM_STATUS_TABLE+1];
+		call AddrTranslation;
+		[phyAddr]=-1;
+		[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=10;
+		SP=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+13];
+		ireturn;
+	endif;
+	
+	multipush(R0,R5,R6,R7,R8,R9,R10);
+	R1=ACQUIRE_SEMAPHORE;
+	call RESOURCE_MANAGER;
+	semaphoreIndex=R0;
+	multipop(R0,R5,R6,R7,R8,R9,R10);
+	
+	//if maximum number of semaphores in system
+	if(semaphoreIndex==-1)then
+		virtAddr=userSP-1;
+		PID=[SYSTEM_STATUS_TABLE+1];
+		call AddrTranslation;
+		[phyAddr]=-2;
+		[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=10;
+		SP=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+13];
+		ireturn;
+	endif;
+	//resource identifier
+	[resourceTableEntry+R0]=SEMAPHORE;
+	//index of semaphore table
+	[resourceTableEntry+R0+1]=semaphoreIndex;
+	
+	virtAddr=userSP-1;
+	PID=[SYSTEM_STATUS_TABLE+1];
+	call AddrTranslation;
+	[phyAddr]=R0;
+	[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=10;
+	SP=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+13];
+	ireturn;
+endif;
+
+//semrelease
+if(sysCallNum==18)then
+	[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=18;
+	virtAddr=userSP-4;
+	PID=[SYSTEM_STATUS_TABLE+1];
+	call AddrTranslation;
+	R0=[phyAddr]; //resource table index
+	resourceTableEntry=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+11]*512+RESOURCE_TABLE_OFFSET;
+	if( (R0>=8) || (R0<0) || ([resourceTableEntry+R0*2]!=SEMAPHORE) )then
+		virtAddr=userSP-1;
+		PID=[SYSTEM_STATUS_TABLE+1];
+		call AddrTranslation;
+		[phyAddr]=-1;
+		[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=10;
+		SP=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+13];
+		ireturn;
+	endif;
+	semaphoreIndex=[resourceTableEntry+R0*2+1];
+	multipush(R0,R5,R6,R7,R8,R9,R10);
+	R1=RELEASE_SEMAPHORE;
+	R2=semaphoreIndex;
+	call RESOURCE_MANAGER;
+	multipop(R0,R5,R6,R7,R8,R9,R10);
+	[resourceTableEntry+R0*2]=-1;
+	virtAddr=userSP-1;
+	PID=[SYSTEM_STATUS_TABLE+1];
+	call AddrTranslation;
+	[phyAddr]=0;
+	[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=10;
+	SP=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+13];
+	ireturn;
+endif;
+AddrTranslation:
+	phyAddr=[PAGE_TABLE_BASE+PID*2+2*(virtAddr/512)]*512+(virtAddr%512);
+	return;
