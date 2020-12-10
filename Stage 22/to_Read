@@ -1,0 +1,7 @@
+In this stage, we will add support for semaphores to the OS. Semaphores are primitives that allow concurrent processes to handle the critical section problem. A typical instance of the critical section problem occurs when a set of processes share memory or files. Here it is likely to be necessary to ensure that the processes do not access the shared data (or file) simultaneously to ensure data consistency. eXpOS provides binary semaphores which can be used by user programs (ExpL programs) to synchronize the access to the shared resources so that data inconsistency will not occur.
+
+There are four actions related to semaphores that a process can perform. Below are the actions along with the corresponding eXpOS system calls -
+1) Acquiring a semaphore - Semget system call
+2) Releasing a semaphore - Semrelease system call
+3) Locking a semaphore - SemLock system call
+4) Unlocking a semaphore - SemUnLock system call 
