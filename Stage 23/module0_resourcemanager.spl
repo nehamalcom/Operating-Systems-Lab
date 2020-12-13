@@ -1,0 +1,131 @@
+alias functionNum R1;
+alias currentPID R2;
+
+if(functionNum==ACQUIRE_DISK)then
+	while([DISK_STATUS_TABLE+0]==1)do
+		[PROCESS_TABLE+currentPID*16+4]=WAIT_DISK;
+		multipush(R1,R2);
+		call CONTEXT_SWITCH;
+		multipop(R1,R2);
+	endwhile;
+	[DISK_STATUS_TABLE+0]=1;
+	[DISK_STATUS_TABLE+4]=currentPID;
+	return;
+endif;
+		
+if(functionNum==ACQUIRE_TERMINAL)then
+	while([TERMINAL_STATUS_TABLE+0]==1)do
+		[PROCESS_TABLE+currentPID*16+4]=WAIT_TERMINAL;
+		multipush(R1,R2);
+		call CONTEXT_SWITCH;
+		multipop(R1,R2);
+	endwhile;
+	[TERMINAL_STATUS_TABLE+0]=1;
+	[TERMINAL_STATUS_TABLE+1]=currentPID;
+	breakpoint;
+	return;
+endif;
+if(functionNum==RELEASE_TERMINAL)then
+	if(currentPID!=[TERMINAL_STATUS_TABLE+1])then
+		R0=-1;
+		return;
+	endif;
+	[TERMINAL_STATUS_TABLE+0]=0;
+	R0=0;
+	alias i R9;
+	i=1;
+	while(i<MAX_PROC_NUM)do
+		if([PROCESS_TABLE+i*16+4]==WAIT_TERMINAL)then
+			[PROCESS_TABLE+i*16+4]=READY;
+		endif;
+		i=i+1;
+	endwhile;
+	[TERMINAL_STATUS_TABLE+0]=0;
+	R0=0;
+	return;
+endif;
+
+if(functionNum==ACQUIRE_SEMAPHORE)then
+	//finding index of a free entry in semaphore table
+	R9=0;
+	while(R9<MAX_SEM_COUNT)do
+		if([SEMAPHORE_TABLE+R9*4+1]==0)then
+			break;
+		endif;
+		R9=R9+1;
+	endwhile;
+	if(R9==MAX_SEM_COUNT)then
+		//no free entry
+		R0=-1;
+		return;
+	endif;
+	//process count
+	[SEMAPHORE_TABLE+R9*4+0]=-1;
+	//locking pid
+	[SEMAPHORE_TABLE+R9*4+1]=1;
+	//returning the index
+	R0=R9;
+	return;
+endif;
+
+if(functionNum==RELEASE_SEMAPHORE)then
+	alias semIndex R2;
+	alias PID R3;
+	//checks is semaphore is locked by current pid
+	if([SEMAPHORE_TABLE+semIndex*4+0]==PID)then
+		[SEMAPHORE_TABLE+semIndex*4+0]=-1;
+		R9=0;
+		while(R9<MAX_PROC_NUM)do
+			if( ([PROCESS_TABLE+R9*16+4]==WAIT_SEMAPHORE) && ([PROCESS_TABLE+R9*16+5]==semIndex) )then
+				[PROCESS_TABLE+R9*16+4]=READY;
+				[PROCESS_TABLE+R9*16+5]=semIndex;
+			endif;
+			R9=R9+1;
+		endwhile;
+	endif;
+	//decrement process count
+	[SEMAPHORE_TABLE+semIndex*4+1]=[SEMAPHORE_TABLE+semIndex*4+1]-1;
+	R0=0;
+	return;
+endif;
+
+if(functionNum==ACQUIRE_INODE)then
+	alias inodeIndex R2;
+	alias PID R3;
+	//while inode is locked
+	while([FILE_STATUS_TABLE+inodeIndex*16+0]!=-1)do
+		[PROCESS_TABLE+PID*16+4]=WAIT_FILE;
+		[PROCESS_TABLE+PID*16+5]=inodeIndex;
+		multipush(R1,R2);
+		call CONTEXT_SWITCH;
+		multipop(R1,R2);
+	endwhile;
+	if([INODE_TABLE+inodeIndex*16+1]==-1)then
+		//inode has become invalid
+		R0=-1;
+		return;
+	endif;
+	[FILE_STATUS_TABLE+inodeIndex*16+0]=PID;
+	R0=0;
+	return;
+endif;
+
+if(functionNum==RELEASE_INODE)then
+	alias filenum R2;
+	alias inputPID R3;
+	if([INODE_TABLE+filenum*16+0]!=inputPID)then
+		R0=-1;
+		return;
+	endif;
+	[FILE_STATUS_TABLE+filenum*16+0]=-1; //free
+	R9=0;
+	while(R9<MAX_PROC_NUM)do
+		if( ([PROCESS_TABLE+R9*16+4]==WAIT_FILE) && ([PROCESS_TABLE+R9*16+5]==filenum) )then
+			[PROCESS_TABLE+R9*16+4]=READY;
+			[PROCESS_TABLE+R9*16+5]=filenum;
+		endif;
+		R0=R0+1;
+	endwhile;	
+	R0=0;
+	return;
+endif;

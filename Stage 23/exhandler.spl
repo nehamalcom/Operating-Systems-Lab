@@ -1,0 +1,90 @@
+print "EXCEPTION";
+breakpoint;
+
+alias processTableEntry R6;
+alias diskMapTableEntry R7;
+alias pageTableEntry R8;
+
+processTableEntry=PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16;
+diskMapTableEntry=DISK_MAP_TABLE+[SYSTEM_STATUS_TABLE+1]*10;
+pageTableEntry=PAGE_TABLE_BASE+[SYSTEM_STATUS_TABLE+1]*20;
+
+[processTableEntry+9] = -1; //mode set to exception ie -1
+//setting up kernel stack
+[processTableEntry + 13] = SP;
+SP = [processTableEntry+11]*512 - 1;
+
+backup;
+multipush(EIP);
+
+//if exception is other than page fault or user stack full
+if(EC!=0)then
+	if(EC==1)then
+		print("illegal instruction");
+		print[EIP-1];
+		print [EIP];
+		print[EIP+1];
+	endif;
+	if(EC==2)then
+		print("illegal memaccess");
+	endif;
+	if(EC==3)then
+		print("illegal arithmetic");
+	endif;
+	if([processTableEntry + 13]==(PTLR*512-1))then
+		print("usersp full");
+	endif;
+	multipush(R5,R6,R7,R8,R9,R10,R11);
+	R1=EXIT_PROCESS;
+	R2=[SYSTEM_STATUS_TABLE+1];
+	call PROCESS_MANAGER;
+	multipop(R5,R6,R7,R8,R9,R10,R11);
+	call CONTEXT_SWITCH;
+endif;
+
+//if exception due to page fault
+if(EC==0)then
+	if( (EPN>=4) && (EPN<=7) )then
+		print "gettingcodepage";
+		//it is a code page
+		multipush(R5,R6,R7,R8,R9,R10,R11);
+		R1=GET_CODE_PAGE;
+		R2=[diskMapTableEntry+EPN];
+		call MEMORY_MANAGER;
+		multipop(R5,R6,R7,R8,R9,R10,R11);
+		[pageTableEntry+EPN*2+0]=R0;
+		[pageTableEntry+EPN*2+1]="1100";
+	endif;
+	if( (EPN>=2) && (EPN<=3) )then
+		print "gettingheappage";
+		//it is a heap page
+		multipush(R5,R6,R7,R8,R9,R10,R11);
+		R1=GET_FREE_PAGE;
+		call MEMORY_MANAGER;
+		multipop(R5,R6,R7,R8,R9,R10,R11);
+		[pageTableEntry+EPN*2+0]=R0;
+		[pageTableEntry+EPN*2+1]="1110";
+		
+		multipush(R5,R6,R7,R8,R9,R10,R11);
+		R1=GET_FREE_PAGE;
+		call MEMORY_MANAGER;
+		multipop(R5,R6,R7,R8,R9,R10,R11);
+		[pageTableEntry+EPN*2+2]=R0;
+		[pageTableEntry+EPN*2+3]="1110";
+	endif;
+	
+	multipop(EIP);
+	restore;
+	[processTableEntry+9] = 0;
+	SP=[processTableEntry + 13];
+	SP=SP+1;
+	R10 = SP/512;
+    	R11 = SP % 512;
+    	R10 = [PTBR + R10*2]*512;
+    	[R10+R11] = EIP;
+	
+	ireturn;
+endif;
+	
+halt;
+

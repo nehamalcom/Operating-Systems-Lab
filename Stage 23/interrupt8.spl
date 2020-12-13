@@ -1,0 +1,316 @@
+alias parentPID R8;
+alias parentRetptr R9;
+alias childPID R10;
+
+__INITIALIZE__:
+    alias parentSP R7;
+    alias parentPcb R6;
+
+    parentPID = [SYSTEM_STATUS_TABLE+1];
+    parentSP = SP;
+
+    parentPcb = PROCESS_TABLE + parentPID*16;
+
+    [parentPcb + 9] = 8; // MODE = SYSCALL NUMBER
+
+    [parentPcb + 13] = SP; // UPTR
+    SP = [parentPcb + 11]*512 - 1;
+
+    R0 = parentSP - 1;
+    R1 = parentPID;
+    call MemTranslate;
+    parentRetptr = R0;
+
+    alias __unalias__INIT_1 R7;
+    alias __unalias__INIT_2 R6;
+
+__GET_CHILD_PCB__:
+    multipush(R8, R9);
+    R1 = GET_PCB_ENTRY;
+    call PROCESS_MANAGER;
+    multipop(R8, R9);
+
+    childPID = R0;
+
+    if(childPID == -1) // No free PCB
+    then
+        [parentRetptr] = -1;
+
+        [PROCESS_TABLE + parentPID*16 + 9] = 0;
+        SP = [PROCESS_TABLE + parentPID*16 + 13];
+        ireturn;
+    endif;
+
+__ENSURE_HEAP__:
+    if([PTBR + 2*2] == -1)
+    then
+        // Heap is not allocated
+
+        multipush(R8, R9, R10);
+        R1 = GET_FREE_PAGE;
+        call MEMORY_MANAGER;
+        multipop(R8, R9, R10);
+
+        [PTBR + 2*2 + 0] = R0;
+        [PTBR + 2*2 + 1] = "1110";
+
+        multipush(R8, R9, R10);
+        R1 = GET_FREE_PAGE;
+        call MEMORY_MANAGER;
+        multipop(R8, R9, R10);
+
+        [PTBR + 3*2 + 0] = R0;
+        [PTBR + 3*2 + 1] = "1110";
+    endif;
+
+__INIT_PCB__:
+    alias childPcb R7;
+    alias parentPcb R6;
+
+    childPcb = PROCESS_TABLE + childPID*16;
+    parentPcb = PROCESS_TABLE + parentPID*16;
+
+    [childPcb+3]  = [parentPcb+3];  // USERID
+    [childPcb+6]  = [parentPcb+6];  // SWAP FLAG
+    [childPcb+7]  = [parentPcb+7];  // INODE INDEX
+    [childPcb+10] = [parentPcb+10]; // UArea Swap Status
+    [childPcb+13] = [parentPcb+13]; // UPTR
+
+    [childPcb+0]  = 0;              // TICK
+    [childPcb+2]  = parentPID;      // PPID
+    [childPcb+4]  = ALLOCATED;      // STATE
+    [childPcb+9]  = 0;              // MODE
+    [childPcb+12] = 0;              // KPTR
+
+    alias __unalias__PCB_1 R7;
+    alias __unalias__PCB_2 R6;
+
+__ALLOC_UAREA__:
+    alias childPcb R7;
+
+    childPcb = PROCESS_TABLE + childPID*16;
+
+    multipush(R7, R8, R9, R10);
+    R1 = GET_FREE_PAGE;
+    call MEMORY_MANAGER;
+    multipop(R7, R8, R9, R10);
+
+    [childPcb + 11] = R0;
+
+    alias __unalias__UAREA_1 R7;
+
+
+__COPY_RES_TABLE__:
+    alias childResTable R7;
+    alias parentResTable R6;
+
+        alias _childPcb R5;
+        alias _parentPcb R4;
+
+        _childPcb  = PROCESS_TABLE + childPID  * 16;
+        _parentPcb = PROCESS_TABLE + parentPID * 16;
+
+    childResTable  =  [ _childPcb  + 11 ]  * 512 + RESOURCE_TABLE_OFFSET;
+    parentResTable =  [ _parentPcb + 11 ]  * 512 + RESOURCE_TABLE_OFFSET;
+
+    alias i         R5;
+    alias childRes  R4;
+    alias parentRes R3;
+    i = 0;
+    while(i < 8)
+    do
+        childRes       = childResTable  + 2*i;
+        parentRes      = parentResTable + 2*i;
+        [childRes]     = [parentRes];
+        [childRes + 1] = [parentRes + 1];
+
+        if([childRes] == SEMAPHORE)
+        then
+            alias semIdx R4;
+            alias semCountPtr R3;
+
+            semIdx = [childRes + 1];
+            semCountPtr = SEMAPHORE_TABLE + semIdx*4 + 1;
+
+            [semCountPtr] = [semCountPtr] + 1;
+        endif;
+
+        i = i+1;
+    endwhile;
+
+    alias __unalias__RES_1 R7;
+    alias __unalias__RES_2 R6;
+    alias __unalias__RES_3 R5;
+    alias __unalias__RES_4 R4;
+    alias __unalias__RES_5 R3;
+
+
+__COPY_DISK_MAP_TABLE__:
+    alias i R7;
+    alias parentDiskMapTable R6;
+    alias childDiskMapTable R5;
+
+    parentDiskMapTable = DISK_MAP_TABLE + parentPID * 10;
+    childDiskMapTable  = DISK_MAP_TABLE + childPID  * 10;
+
+    i = 0;
+    while(i < 10)
+    do
+        [childDiskMapTable + i] = [parentDiskMapTable + i];
+        i = i+1;
+    endwhile;
+
+    alias __unalias__DISK_1 R7;
+    alias __unalias__DISK_2 R6;
+    alias __unalias__DISK_3 R5;
+
+__INIT_PAGE_TABLE__:
+    alias i R7;
+    alias childPageTable R6;
+    alias parentPageTable R5;
+    alias page R4;
+    alias aux R3;
+
+    childPageTable  = PAGE_TABLE_BASE + childPID  * 20;
+    parentPageTable = PAGE_TABLE_BASE + parentPID * 20;
+
+    i = 0;
+    while(i < 8) // Share every page except stack pages.
+    do
+        page = [parentPageTable + i*2];
+        aux  = [parentPageTable + i*2 + 1];
+
+        [childPageTable + i*2]     = page;
+        [childPageTable + i*2 + 1] = aux;
+
+        // Increment shared count for shared pages.
+        [MEMORY_FREE_LIST + page] =[MEMORY_FREE_LIST + page] + 1;
+
+        i = i+1;
+    endwhile;
+
+    alias __unalias__PGTBL_1 R7;
+    alias __unalias__PGTBL_2 R6;
+    alias __unalias__PGTBL_3 R5;
+    alias __unalias__PGTBL_4 R4;
+    alias __unalias__PGTBL_5 R3;
+
+
+__SETUP_STACK__:
+    alias childPageTable R7;
+
+    childPageTable = PAGE_TABLE_BASE + childPID*20;
+
+    multipush(R7, R8, R9, R10);
+    R1 = GET_FREE_PAGE;
+    call MEMORY_MANAGER;
+    multipop(R7, R8, R9, R10);
+
+    [childPageTable + 8*2 + 0] = R0;
+    [childPageTable + 8*2 + 1] = "0110";
+
+    multipush(R7, R8, R9, R10);
+    R1 = GET_FREE_PAGE;
+    call MEMORY_MANAGER;
+    multipop(R7, R8, R9, R10);
+
+    [childPageTable + 9*2 + 0] = R0;
+    [childPageTable + 9*2 + 1] = "0110";
+
+
+    // ------ Copy Stack content
+    R0  = 8;         // Page
+    R1  = parentPID; // Source PID
+    R2  = childPID;  // Dest PID
+    call CopyPage;
+
+    R0 = 9;         // Page
+    R1 = parentPID; // Source PID
+    R2 = childPID;  // Dest PID
+    call CopyPage;
+
+    alias __unalias__STACK_1 R7;
+
+__BP__:
+    // ------ Store BP to top of Kernel Stack of child
+    [PROCESS_TABLE + childPID*16 + 12]       = 1;
+    [[PROCESS_TABLE + childPID*16 + 11]*512] = BP;
+
+__RETURN__:
+    alias childRetptr R7;
+
+    R0 = [PROCESS_TABLE + childPID*16 + 13] - 1;
+    R1 = childPID;
+    call MemTranslate;
+    childRetptr = R0;
+
+    // --- Return values
+    [parentRetptr] = childPID;
+    [childRetptr] = 0;
+
+    [PROCESS_TABLE + childPID*16  + 4] = CREATED;
+    [PROCESS_TABLE + parentPID*16 + 9] = 0; // MODE = 0
+    SP = [PROCESS_TABLE + parentPID*16 + 13]; // UPTR
+    ireturn;
+
+CopyPage:
+    alias page R0;
+    alias sourcePID R1;
+    alias destPID R2;
+
+    multipush(R7, R6, R5);
+
+    alias sourceBase R7;
+    alias destBase R6;
+    alias i R5;
+
+    sourceBase = [ PAGE_TABLE_BASE + sourcePID*20 + page*2 ] *512;
+    destBase   = [ PAGE_TABLE_BASE + destPID*20   + page*2 ] *512;
+
+    i = 0;
+    while(i<512)
+    do
+        [destBase + i] = [sourceBase + i];
+        i = i + 1;
+    endwhile;
+
+    multipop(R7, R6, R5);
+
+    alias __unalias__CP_1 R7;
+    alias __unalias__CP_2 R6;
+    alias __unalias__CP_3 R5;
+
+    alias __unalias__CP_4 R2;
+    alias __unalias__CP_5 R1;
+    alias __unalias__CP_6 R0;
+
+
+    return;
+
+
+MemTranslate:
+    alias addr  R0;
+    alias PID   R1;
+
+    multipush(R7, R6, R5);
+
+    alias offset R7;
+    alias virPage R6;
+    alias phyPage R5;
+
+    offset = addr % 512;
+    virPage = addr/512;
+    phyPage = [PAGE_TABLE_BASE + PID*20 + virPage*2];
+
+    R0 = phyPage*512 + offset;
+
+    multipop(R7, R6, R5);
+
+    alias __unalias__MT_1 R7;
+    alias __unalias__MT_2 R6;
+    alias __unalias__MT_3 R5;
+
+    alias __unalias__MT_5 R1;
+    alias __unalias__MT_6 R0;
+
+    return;

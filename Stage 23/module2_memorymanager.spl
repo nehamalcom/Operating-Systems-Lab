@@ -1,0 +1,101 @@
+alias functionNum R1;
+
+if(functionNum==GET_FREE_PAGE)then
+	alias PID R11;
+	alias processTableEntry R12;
+	alias i R13;
+
+	PID = [SYSTEM_STATUS_TABLE+1];
+	processTableEntry = PROCESS_TABLE+PID*16;
+
+	[SYSTEM_STATUS_TABLE+3] = [SYSTEM_STATUS_TABLE+3] + 1;
+
+	while([SYSTEM_STATUS_TABLE+2] == 0)
+	do
+	[processTableEntry+4] = WAIT_MEM;
+	call CONTEXT_SWITCH;
+	endwhile;
+
+	[SYSTEM_STATUS_TABLE+3] = [SYSTEM_STATUS_TABLE+3] - 1;
+
+	[SYSTEM_STATUS_TABLE+2] = [SYSTEM_STATUS_TABLE+2] - 1;
+
+	i = 0;
+	while(i<NUM_MEM_PAGES)
+	do
+	if([MEMORY_FREE_LIST+i] == 0)
+	then
+	    [MEMORY_FREE_LIST+i] = 1;
+	    R0 = i;
+	    return;
+	endif;
+	i = i+1;
+	endwhile;
+
+	breakpoint;
+	R0 = -1;   // This should never happen
+	return;
+
+endif;
+
+if(functionNum==RELEASE_PAGE)then
+	alias pageNum R2;
+	[MEMORY_FREE_LIST+pageNum]=[MEMORY_FREE_LIST+pageNum]-1;
+	[SYSTEM_STATUS_TABLE+2]=[SYSTEM_STATUS_TABLE+2]+1;
+	alias i R9;
+	i=0;
+	while(i<MAX_PROC_NUM)do
+		if([PROCESS_TABLE+i*16+4]==WAIT_MEM)then
+			[PROCESS_TABLE+i*16+4]=READY;
+		endif;
+		i=i+1;
+	endwhile;
+	return;
+endif;
+
+
+if(functionNum==GET_CODE_PAGE)then
+	alias blockNum R2;
+	alias pageTableAddr R12;
+	alias ctr R10;
+	alias i R11;
+	ctr=0;
+	while(ctr<MAX_PROC_NUM)do
+		i=4;
+		while(i<=7)do
+			if([DISK_MAP_TABLE+ctr*10+i]==blockNum)then
+				//now find its entry in page table
+				pageTableAddr=[PAGE_TABLE_BASE+ctr*20+2*i];
+				if(pageTableAddr!=-1)then
+					[MEMORY_FREE_LIST+pageTableAddr]=[MEMORY_FREE_LIST+pageTableAddr]-1;
+					R0=pageTableAddr;
+					return;
+				endif;
+			endif;
+			i=i+1;
+		endwhile;
+		ctr=ctr+1;
+	endwhile;
+	//we reach here if required page is not in memory
+	multipush(R1,R2,R10,R11,R12);
+	R1=GET_FREE_PAGE;
+	call MEMORY_MANAGER;
+	multipop(R1,R2,R10,R11,R12);
+	//R0 will have the free page that has to be loaded
+	multipush(R0,R1,R2,R10,R11,R12);
+	R1=DISK_LOAD;
+	R4=blockNum;
+	R2=[SYSTEM_STATUS_TABLE+1];
+	R3=R0;
+	call DEVICE_MANAGER;
+	multipop(R0,R1,R2,R10,R11,R12);
+	//R0 will have the loaded page now we can safely return
+	return;
+endif;
+
+if(functionNum==RELEASE_BLOCK)then
+	alias diskBlockNum R1;
+	[DISK_FREE_LIST+diskBlockNum]=[DISK_FREE_LIST+diskBlockNum]-1;
+	return;
+endif;
+	
