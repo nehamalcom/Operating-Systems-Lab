@@ -1,0 +1,1 @@
+In this stage, we will understand the mechanism of opening and closing a file with the help of Open and Close system calls. We will also understand how contents of a file can be read by using Read system call. Fork system call and Free User Area Page function of process manager module are also modified in this stage. 
