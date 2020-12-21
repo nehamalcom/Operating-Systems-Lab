@@ -1,0 +1,108 @@
+alias retptr R8;
+alias processTableEntry R9;
+alias PID R10;
+alias syscallNum R11;
+alias arg1 R12;
+alias userSP R7;
+
+userSP=SP;
+
+PID=[SYSTEM_STATUS_TABLE+1];
+processTableEntry=PROCESS_TABLE+PID*16;
+[processTableEntry + 13] = SP;
+SP=[processTableEntry+11]*512-1;
+
+R0=userSP-5;
+R1=PID;
+call AddrTranslation;
+syscallNum=[R0];
+
+R0=userSP-4;
+R1=PID;
+call AddrTranslation;
+arg1=[R0];
+
+R0=userSP-1;
+R1=PID;
+call AddrTranslation;
+retptr=R0;
+
+if(syscallNum == INT_SEMLOCK)then
+    [processTableEntry + 9] = INT_SEMLOCK;
+
+    alias semIndex R4;
+    alias resourceTable R5;
+    alias resIndex R6;
+
+    resIndex=arg1;
+    resourceTable=[processTableEntry+11]*512+512-16;
+
+    if( (resIndex<0) || (resIndex>7) || ([resourceTable+resIndex*2]!= SEMAPHORE) )then
+        [retptr]=-1;
+        call ExitInterrupt;
+    endif;
+
+    semIndex=[resourceTable+resIndex*2+1];
+
+    while([SEMAPHORE_TABLE+semIndex*4]!=-1)do
+        [processTableEntry+4]=WAIT_SEMAPHORE;
+        [processTableEntry+5]=semIndex;
+        multipush(R4,R5,R6,R7,R8,R9,R10,R11,R12);
+        call CONTEXT_SWITCH;
+        multipop(R4,R5,R6,R7,R8,R9,R10,R11,R12);
+    endwhile;
+
+    [SEMAPHORE_TABLE+semIndex*4]=PID;
+    [retptr]=0;
+    call ExitInterrupt;
+endif;
+
+if(syscallNum==INT_SEMUNLOCK)then
+    [processTableEntry+9]=INT_SEMUNLOCK;
+
+    alias resourceTable R4;
+    alias resIndex R5;
+    alias semIndex R6;
+
+    resIndex=arg1;
+    resourceTable=[processTableEntry+11]*512+512-16;
+
+    if( (resIndex<0) || (resIndex>7) || ([resourceTable+resIndex*2]!=SEMAPHORE) )then
+        [retptr]=-1;
+        call ExitInterrupt;
+    endif;
+
+    semIndex=[resourceTable+resIndex*2+1];
+
+    if([SEMAPHORE_TABLE + semIndex*4]!=-1)then
+        if([SEMAPHORE_TABLE+semIndex*4]!=[SYSTEM_STATUS_TABLE+1])then
+            [retptr]=-2;
+            call ExitInterrupt;
+        endif;
+
+        [SEMAPHORE_TABLE+semIndex*4]=-1;
+
+        alias ctr R4;
+        alias _processTableEntry R3;
+
+        ctr=0;
+        while(ctr<16)do
+            processTableEntry=PROCESS_TABLE+ctr*16;
+            if( ([processTableEntry+4]==WAIT_SEMAPHORE) && ([processTableEntry+5]== semIndex) )then
+                [processTableEntry + 4] = READY;
+            endif;
+            ctr=ctr+1;
+        endwhile;
+    endif;
+    [retptr]=0;
+    call ExitInterrupt;
+endif;
+
+ExitInterrupt:
+    [processTableEntry + 9] = 10;
+    SP = [processTableEntry + 13];
+    ireturn;
+
+AddrTranslation:
+    R0=[PAGE_TABLE_BASE+R1*20+2*(R0/512)]*512+(R0%512);
+    return;

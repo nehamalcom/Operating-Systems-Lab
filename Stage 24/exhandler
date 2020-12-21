@@ -1,0 +1,92 @@
+breakpoint;
+
+alias PID R10;
+alias processTableEntry R11;
+alias diskMapTableEntry R12;
+alias pageTableEntry R13
+alias userSP R14;
+
+PID=[SYSTEM_STATUS_TABLE+1];
+processTableEntry=PROCESS_TABLE+PID*16;
+diskMapTableEntry=DISK_MAP_TABLE+PID*10;
+pageTableEntry=PAGE_TABLE_BASE+PID*20;
+
+//setting up kernel stack
+userSP = SP;
+[processTableEntry + 13] = SP;
+SP = [processTableEntry+11]*512 - 1;
+[processTableEntry+9] = -1; //mode set to exception ie -1
+
+backup;
+multipush(EIP);
+
+//if exception is other than page fault or user stack full
+if( (EC!=0) || (userSP==(PTLR*512-1)) )then
+	if(EC==1)then
+		print("illegal instruction");
+	endif;
+	if(EC==2)then
+		print("illegal memaccess");
+	endif;
+	if(EC==3)then
+		print("illegal arithmetic");
+	endif;
+	if(userSP==(PTLR*512-1))then
+		print("usersp full");
+	endif;
+	multipush(R10,R11,R12,R13);
+	R1=EXIT_PROCESS;
+	R2=PID;
+	call PROCESS_MANAGER;
+	call CONTEXT_SWITCH;
+	multipop(R10,R11,R12,R13);
+endif;
+
+//if exception due to page fault
+if(EC==0)then
+	if( (EPN>=4) && (EPN<=7) )then
+		//it is a code page
+		multipush(R10,R11,R12,R13);
+		R1=GET_CODE_PAGE;
+		R2=[diskMapTableEntry+EPN];
+		call MEMORY_MANAGER;
+		multipop(R10,R11,R12,R13);
+		[pageTableEntry+EPN*2+0]=R0;
+		[pageTableEntry+EPN*2+1]="1100";
+	endif;
+	if( (EPN>=2) && (EPN<=3) )then
+		//it is a heap page
+		multipush(R10,R11,R12,R13);
+		R1=GET_FREE_PAGE;
+		call MEMORY_MANAGER;
+		multipop((R10,R11,R12,R13);
+		[pageTableEntry+EPN*2+0]=R0;
+		[pageTableEntry+EPN*2+1]="1110";
+		
+		multipush(R10,R11,R12,R13);
+		R1=GET_FREE_PAGE;
+		call MEMORY_MANAGER;
+		multipop((R10,R11,R12,R13);
+		[pageTableEntry+EPN*2+2]=R0;
+		[pageTableEntry+EPN*2+3]="1110";
+	endif;	
+	[processTableEntry+9] = 0;
+	multipop(EIP);
+	restore;
+	SP=userSP;
+	SP=SP+1;
+	virtAddr=SP;
+	call AddrTranslation;
+	[phyAddr]=EIP;
+	
+	ireturn;
+endif;
+	
+halt;
+	
+AddrTranslation:
+	R15=virtAddr/512;
+	R15=[PTBR+2*R15];
+	phyAddr=R15*512+virtAddr%512;
+	return;
+	

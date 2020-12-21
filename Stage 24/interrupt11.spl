@@ -1,0 +1,96 @@
+//interrupt 11: wait, signal, getpid, getppid
+breakpoint;
+
+alias PID R9;
+alias processTableEntry R10;
+alias userSP R11;
+alias sysCallNum R3;
+alias argPID R4;
+alias virtAddr R1;
+alias phyAddr R2;
+
+PID=[SYSTEM_STATUS_TABLE+1];
+processTableEntry=PROCESS_TABLE+PID*16;
+
+//switching stacks and extracting system call number
+userSP=SP;
+virtAddr=userSP-5;
+call AddrTranslation;
+sysCallNum=[phyAddr];
+[processTableEntry+13]=SP;
+SP=[processTableEntry+11]*512-1;
+
+//getpid
+if(sysCallNum==INT_GETPID)then
+	[processTableEntry+9]=11;
+	virtAddr=userSP-1;
+	call AddrTranslation;
+	[phyAddr]=[processTableEntry+1];
+	SP=userSP;
+	[processTableEntry+9]=0;
+	ireturn;
+endif;
+
+//getppid
+if(sysCallNum==INT_GETPPID)then
+	[processTableEntry+9]=12;
+	virtAddr=userSP-1;
+	call AddrTranslation;
+	[phyAddr]=[processTableEntry+2];
+	SP=userSP;
+	[processTableEntry+9]=0;
+	ireturn;
+endif;
+
+//wait
+if(sysCallNum==INT_WAIT)then
+	[processTableEntry+9]=13;
+	virtAddr=userSP-4;
+	call AddrTranslation;
+	argPID=[phyAddr];
+	if( (PID==argPID) || ([PROCESS_TABLE+argPID*16+4]==TERMINATED) || (argPID>=MAX_PROC_NUM) || (argPID<0) )then
+		virtAddr=userSP-1;
+		call AddrTranslation;
+		[phyAddr]=-1;
+		SP=userSP;
+		[processTableEntry+9]=0;
+		ireturn;
+	endif;
+	[processTableEntry+4]=WAIT_PROCESS;
+	[processTableEntry+5]=argPID;
+	multipush(R3,R4,R9,R10,R11);
+	call CONTEXT_SWITCH;
+	multipop(R3,R4,R9,R10,R11);
+	[processTableEntry+9]=0;
+	virtAddr=userSP-1;
+	call AddrTranslation;
+	[phyAddr]=0;
+	SP=userSP;
+	[processTableEntry+9]=0;
+	ireturn;
+endif;
+
+//signal
+if(sysCallNum==INT_SIGNAL)then
+	[processTableEntry+9]=14;
+	R0=0;
+	while(R0<MAX_PROC_NUM)do
+		if( ([PROCESS_TABLE+R0*16+4]==WAIT_PROCESS) && ([PROCESS_TABLE+R0*16+5]==PID) )then
+			[PROCESS_TABLE+R0*16+4]=READY;
+		endif;
+		R0=R0+1;
+	endwhile;
+	[processTableEntry+9]=0;
+	virtAddr=userSP-1;
+	call AddrTranslation;
+	[phyAddr]=0;
+	SP=userSP;
+	[processTableEntry+9]=0;
+	ireturn;
+endif;
+
+AddrTranslation:
+	R2=virtAddr/512;
+	phyAddr=[PTBR+2*R2]*512+virtAddr%512;
+	return;
+

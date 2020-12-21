@@ -1,0 +1,65 @@
+//shutdown system call 21
+
+//switching stacks
+[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+13]=SP;
+SP=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+11]*512-1;
+
+alias retAddr R1;
+alias virtAddr R2;
+alias phyAddr R3;
+alias systemCallNum R4;
+alias pageNum R9;
+alias blockNum R10;
+
+virtAddr=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+13]-5;
+call AddrTranslation;
+systemCallNum=[phyAddr];
+
+[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=21;
+if( ([SYSTEM_STATUS_TABLE+1]!=1) ||  ([PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+3]!=1) )then
+	virtAddr=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+13]-1;
+	call AddrTranslation;
+	[phyAddr]=-1;
+	[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=0;
+	SP=[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+13];
+	ireturn;
+endif;
+
+//block -- page
+//inode+user table 3,4 -- 59,60
+//root file 5 -- 62
+//disk free list 2 -- 61
+
+pageNum=3;
+blockNum=59;
+call diskStoreFunc;
+
+pageNum=4;
+blockNum=60;
+call diskStoreFunc;
+
+pageNum=5;
+blockNum=62;
+call diskStoreFunc;
+
+pageNum=2;
+blockNum=61;
+call diskStoreFunc;
+
+halt;
+
+
+AddrTranslation:
+	R5=virtAddr/512;
+	phyAddr=[PTBR+2*R5]*512+virtAddr%512;
+	return;
+
+diskStoreFunc:
+	multipush(R4);
+	R1=DISK_STORE;
+	R2=[SYSTEM_STATUS_TABLE+1];
+	R3=pageNum;
+	R4=blockNum;
+	call DEVICE_MANAGER;
+	multipop(R4);
+	return;

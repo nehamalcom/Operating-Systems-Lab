@@ -1,0 +1,25 @@
+breakpoint;
+alias currentPID R4;
+alias processTableEntry R5;
+alias i R6;
+
+currentPID=[SYSTEM_STATUS_TABLE+1];
+processTableEntry=PROCESS_TABLE+currentPID*16;
+
+//switching stacks from user to kernel
+[processTableEntry+13]=SP;
+SP=[processTableEntry+11]*512-1;
+backup;
+
+[DISK_STATUS_TABLE+0]=0;
+i=0;
+while(i<MAX_PROC_NUM)do
+	processTableEntry=PROCESS_TABLE+i*16;
+	if([processTableEntry+4]==WAIT_DISK)then
+		[processTableEntry+4]=READY;
+	endif;
+	i=i+1;
+endwhile;
+restore;
+SP=[PROCESS_TABLE+currentPID*16+13];
+ireturn;

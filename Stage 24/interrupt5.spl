@@ -1,0 +1,108 @@
+alias retPtr R8;
+alias processTableEntry R9;
+alias PID R10;
+alias userSP R11;
+alias sysCallNum R12;
+alias arg1 R6;
+alias arg2 R7;
+
+userSP=SP;
+PID=[SYSTEM_STATUS_TABLE+1];
+processTableEntry=PROCESS_TABLE+PID*16;
+
+[processTableEntry+13]=SP; //switching stacks
+SP=[processTableEntry+11]*512-1;
+
+R0=userSP-5;
+R1=PID;
+call AddrTranslation;
+sysCallNum=[R0];
+
+R0=userSP-4;
+R1=PID;
+call AddrTranslation;
+arg1=[R0];
+
+R0=userSP-3;
+R1=PID;
+call AddrTranslation;
+arg2=[R0];
+
+R0=userSP-1;
+R1=PID;
+call AddrTranslation;
+retPtr=R0;
+
+if(sysCallNum==INT_OPEN)then
+	[processTableEntry+9]=INT_OPEN; //setting mode
+	alias resourceTableEntry R3;
+	alias resIndex R4;
+	alias inodeIndex R5;
+	alias filename R2;
+	filename=arg1;
+	resourceTableEntry=[processTableEntry+11]*512+512-16;
+	resIndex=0;
+	while(resIndex<8)do //finding a free resource table entry
+		if([resourceTableEntry+2*resIndex]==-1)then
+			break;
+		endif;
+		resIndex=resIndex+1;
+	endwhile;
+	if(resIndex==8)then //if no free entry
+		[retPtr]=-3;
+		call ExitInterrupt;
+	endif;
+	multipush(R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12);
+	R1=OPEN;
+	R2=filename;
+	call FILE_MANAGER;
+	multipop(R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12);
+	inodeIndex=R0;
+	
+	if(inodeIndex<0)then //if open fails we return the error code
+		[retPtr]=inodeIndex;
+		call ExitInterrupt;
+	endif;
+	[resourceTableEntry+resIndex*2+0]=FILE;
+	[resourceTableEntry+resIndex*2+1]=inodeIndex; //file descriptor
+	[retPtr]=resIndex;
+	call ExitInterrupt;
+endif;
+
+if(sysCallNum==INT_CLOSE)then
+	[processTableEntry+9]=INT_CLOSE; //mode
+	alias resourceTableEntry R3;
+	alias resIndex R4;
+	alias inodeIndex R5;
+	resIndex=arg1;
+	resourceTableEntry=[processTableEntry+11]*512+512-16;
+	if( (resIndex<0) || (resIndex>7) || ([resourceTableEntry+resIndex*2]!=FILE) )then //check whether file descriptor is invalid
+		[retPtr]=-1;
+		call ExitInterrupt;
+	endif;
+	inodeIndex=[resourceTableEntry+resIndex*2+1];
+	multipush(R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12);
+	R1=CLOSE;
+	R2=inodeIndex;
+	call FILE_MANAGER;
+	multipop(R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12);
+	[resourceTableEntry+resIndex*2]=-1;
+	[retPtr]=0;
+	call ExitInterrupt;
+endif;
+
+ExitInterrupt:
+	[processTableEntry+9]=10;
+	SP=[processTableEntry+13];
+	ireturn;
+AddrTranslation:
+	R0=[PAGE_TABLE_BASE+PID*20+2*(R0/512)]*512+(R0%512);
+	return;
+
+
+
+
+
+
+
+

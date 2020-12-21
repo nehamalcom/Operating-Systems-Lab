@@ -1,0 +1,80 @@
+alias functionNum R1;
+alias currentPID R2;
+alias word R3;
+alias virtAddr R4;
+alias phyAddr R5;
+
+if(functionNum==TERMINAL_WRITE)then
+	multipush(R1,R2,R3);
+	R1=ACQUIRE_TERMINAL;
+	R2=currentPID;
+	call RESOURCE_MANAGER;
+	multipop(R1,R2,R3);
+	print word;
+	multipush(R1,R2,R3);
+	R1=RELEASE_TERMINAL;
+	R2=currentPID;
+	call RESOURCE_MANAGER;
+	multipop(R1,R2,R3);
+	return;
+endif;
+if(functionNum==TERMINAL_READ)then
+	alias wordAddr R3;
+	multipush(R1,R2,R3);
+	R1=ACQUIRE_TERMINAL;
+	R2=currentPID;
+	call RESOURCE_MANAGER;
+	multipop(R1,R2,R3);
+	read;
+	[PROCESS_TABLE+currentPID*16+4]=WAIT_TERMINAL;
+	multipush(R1,R2,R3);
+	call CONTEXT_SWITCH;
+	multipop(R1,R2,R3);
+	virtAddr=wordAddr;
+	[wordAddr]=[PROCESS_TABLE+currentPID*16+8];
+	return;
+endif;
+if(functionNum==DISK_LOAD)then
+	alias pageNum R3;
+	alias blockNum R4;
+	multipush(R1,R2,R3,R4);
+	R1=ACQUIRE_DISK;
+	call RESOURCE_MANAGER;
+	multipop(R1,R2,R3,R4);
+	[DISK_STATUS_TABLE+1]=0;
+	[DISK_STATUS_TABLE+2]=pageNum;
+	[DISK_STATUS_TABLE+3]=blockNum;
+	load(pageNum,blockNum);
+	[PROCESS_TABLE+currentPID*16+4]=WAIT_DISK;
+	multipush(R1,R2,R3,R4);
+	call CONTEXT_SWITCH;
+	multipop(R1,R2,R3,R4);	
+	return;
+endif;
+	
+if(functionNum==DISK_STORE)then
+	alias pageNum R3;
+	alias blockNum R4;
+	multipush(R3,R4);
+	R1=ACQUIRE_DISK;
+	R2=currentPID;
+	call RESOURCE_MANAGER;
+	multipop(R3,R4);
+	[DISK_STATUS_TABLE+1]=1; //loadorstore bit
+	[DISK_STATUS_TABLE+2]=pageNum;
+	[DISK_STATUS_TABLE+3]=blockNum;
+	store(pageNum,blockNum);
+	[PROCESS_TABLE+currentPID*16+4]=WAIT_DISK;
+	multipush(R3,R4);
+	call CONTEXT_SWITCH;
+	multipop(R3,R4);
+	return;
+endif;
+
+
+AddrTranslation:
+	R9=virtAddr/512;
+	R9=[PTBR+R9*2];
+	phyAddr=R9*512+(virtAddr%512);
+	return;
+

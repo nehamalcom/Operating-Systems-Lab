@@ -1,0 +1,107 @@
+alias retptr   R4;
+alias processTableEntry R5;
+alias syscallNum R6;
+alias arg1 R7;
+alias PID R8;
+alias userSP R9;
+
+userSP=SP;
+
+PID=[SYSTEM_STATUS_TABLE+1];
+processTableEntry=PROCESS_TABLE+PID*16;
+
+[processTableEntry+13]=SP;
+SP=[processTableEntry+11]*512-1;
+
+R0=userSP-5;
+R1=PID;
+call AddrTranslation;
+syscallNum=[R0];
+
+R0=userSP-4;
+R1=PID;
+call AddrTranslation;
+arg1=[R0];
+
+R0=userSP-1;
+R1=PID;
+call AddrTranslation;
+retptr=R0;
+
+if(syscallNum==INT_SEMGET)then
+    [processTableEntry+9]=INT_SEMGET;
+
+    alias resourceTable R10;
+    alias resIndex R11;
+    alias semIndex R12;
+
+    resourceTable=[processTableEntry+11]*512+512-16;
+
+    resIndex=0;
+    while(resIndex<8)do
+        if([resourceTable+2*resIndex]==-1)then
+            break;
+        endif;
+    endwhile;
+
+    if(resIndex==8)
+    then
+        [retptr]=-1;
+        call Exit;
+    endif;
+    
+    multipush(R5, R6, R7, R8, R9);
+    R1=ACQUIRE_SEMAPHORE;
+    call RESOURCE_MANAGER;
+    semIndex=R0;
+    multipop(R5, R6, R7, R8, R9);
+
+    if(semIndex==-1)then
+        [retptr]=-2;
+        call Exit;
+    endif;
+
+    [resourceTable+resIndex*2+0]=SEMAPHORE;
+    [resourceTable+resIndex*2+1]=semIndex;
+
+    [retptr]=resIndex;
+    call Exit;
+endif;
+
+if(syscallNum==INT_SEMRELEASE)then
+    [processTableEntry+9]=INT_SEMRELEASE;
+
+    alias resourceTable R10;
+    alias resIndex R11;
+    alias semIndex R12;
+
+    resIndex=arg1;
+    resourceTable=[processTableEntry+11]*512+512-16;
+
+    if( (resIndex<0) || (resIndex>7) || ([resourceTable+resIndex*2]!=SEMAPHORE) )then
+        [retptr]=-1;
+        call Exit;
+    endif;
+
+    semIndex=[resourceTable+resIndex*2+1];
+
+    multipush(R5, R6, R7, R8, R9);
+    R1 = RELEASE_SEMAPHORE;
+    R2 = semIndex;
+    call RESOURCE_MANAGER;
+    multipop(R5, R6, R7, R8, R9);
+
+    [resourceTable+resIndex*2]=-1;
+    [retptr]=0;
+    call Exit;
+endif;
+
+Exit:
+    [processTableEntry+9]=10;
+    SP=[processTableEntry+13];
+    ireturn;
+
+AddrTranslation:
+    R0=[PAGE_TABLE_BASE+R1*20+2*(R0/512)]*512+(R0%512);
+    return;
+	

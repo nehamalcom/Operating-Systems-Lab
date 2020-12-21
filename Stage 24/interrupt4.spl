@@ -1,0 +1,168 @@
+//interrupt 4: create 1 and delete 4
+breakpoint;
+
+alias PID R1;
+alias processTableEntry R2;
+alias userSP R3;
+alias sysCallNum R4;
+alias virtAddr R9;
+alias phyAddr R10;
+alias arg1 R5;
+alias retAddr R6;
+alias arg2 R7;
+alias filenum R8;
+
+PID=[SYSTEM_STATUS_TABLE+1];
+processTableEntry=PROCESS_TABLE+PID*16;
+
+//switching stacks and extracting system call number
+userSP=SP;
+virtAddr=userSP-5;
+call AddrTranslation;
+sysCallNum=[phyAddr];
+[processTableEntry+13]=SP;
+SP=[processTableEntry+11]*512-1;
+
+//taking args
+virtAddr=userSP-4;
+call AddrTranslation;
+arg1=[phyAddr];
+virtAddr=userSP-3;
+call AddrTranslation;
+arg2=[phyAddr];
+
+//return address
+virtAddr=userSP-1;
+call AddrTranslation;
+retAddr=phyAddr;
+
+//create
+if(sysCallNum==1)then
+	[processTableEntry+9]=1;
+	R0=0;
+	while(R0<MAX_FILE_NUM)do
+		if( ([INODE_TABLE+16*R0+1]==arg1) )then
+			//file is present
+			[retAddr]=0;
+			[processTableEntry+9]=0;
+			SP=[processTableEntry+13];
+			ireturn;
+		endif;
+		R0=R0+1;
+	endwhile;
+	R0=0;
+	while(R0<MAX_FILE_NUM)do
+		if( ([INODE_TABLE+16*R0+1]==-1) )then
+			//free index found
+			break;
+		endif;
+		R0=R0+1;
+	endwhile;
+	if(R0==MAX_FILE_NUM)then
+		//no free entries
+		[retAddr]=-1;
+		[processTableEntry+9]=0;
+		SP=[processTableEntry+13];
+		ireturn;
+	endif;
+	[INODE_TABLE+R0*16+1]=arg1; //filename
+	[INODE_TABLE+R0*16+2]=0; //filesize
+	[INODE_TABLE+R0*16+0]=DATA; //filetype
+	[INODE_TABLE+R0*16+8]=-1; //no disk blocks allocated
+	[INODE_TABLE+R0*16+9]=-1;
+	[INODE_TABLE+R0*16+10]=-1;
+	[INODE_TABLE+R0*16+11]=-1;
+	//[INODE_TABLE+R0*16+3]=[PROCESS_TABLE+[SYSTEM_STATIS_TABLE+1]*16+3]; //userid
+	[ROOT_FILE+R0*8+0]=arg1;
+	[ROOT_FILE+R0*8+1]=0;
+	[ROOT_FILE+R0*8+2]=DATA;
+	[retAddr]=0;
+	[processTableEntry+9]=0;
+	SP=[processTableEntry+13];
+	ireturn;
+endif;
+
+//delete
+if(sysCallNum==4)then
+	[processTableEntry+9]=4;
+	//arg1 is filename to be deleted
+	R0=0;
+	while(R0<MAX_FILE_NUM)do
+		if([INODE_TABLE+R0*16+1]==arg1)then
+			break;
+		endif;
+		R0=R0+1;
+	endwhile;
+	if(R0==MAX_FILE_NUM)then
+		[retAddr]=0;
+		[processTableEntry+9]=0;
+		SP=[processTableEntry+13];
+		ireturn;
+	endif;
+	if([INODE_TABLE+R0*16+0]!=DATA)then
+		[retAddr]=-1;
+		[processTableEntry+9]=0;
+		SP=[processTableEntry+13];
+		ireturn;
+	endif;
+	if( ([INODE_TABLE+R0*16+4]==EXCLUSIVE) &&  ([INODE_TABLE+R0*16+3]==[processTableEntry+3]) )then
+		[retAddr]=-1;
+	endif;
+	filenum=R0;
+	//releasing blocks
+	multipush(R0,R1,R2,R3,R4,R5,R6,R7,R8);
+	R1=ACQUIRE_INODE;
+	R2=filenum; //file number
+	R3=PID;
+	call RESOURCE_MANAGER;
+	multipop(R0,R1,R2,R3,R4,R5,R6,R7,R8);
+	
+	if([FILE_STATUS_TABLE+filenum*4+1]!=-1)then
+		[retAddr]=-2;
+		[processTableEntry+9]=0;
+		SP=[processTableEntry+13];
+		ireturn;
+	endif;
+	
+	//deallocating disk blocks
+	
+	R0=0;
+	while(R0<4)do
+		alias block R11;
+		block=[INODE_TABLE+filenum*16+8+R0];
+		R12=0;
+		while(R12<MAX_BUFFER)do
+			if( [BUFFER_TABLE+R12*4+0]==block)then
+				[BUFFER_TABLE+R12*4+0]=-1;
+				[BUFFER_TABLE+R12*4+1]=0;
+				[BUFFER_TABLE+R12*4+2]=-1;
+				break;
+			endif;
+			multipush(R0,R1,R2,R3,R4,R5,R6,R7,R8);
+			R1=RELEASE_BLOCK;
+			R2=block;
+			call MEMORY_MANAGER;
+			multipop(R0,R1,R2,R3,R4,R5,R6,R7,R8);
+			R12=R12+1;
+		endwhile;
+		R0=R0+1;
+	endwhile;
+	//invalidate root file and inode table entries
+	[INODE_TABLE+16*filenum+1]=-1;
+	[ROOT_FILE+filenum*8+0]=0;
+	multipush(R0,R1,R2,R3,R4,R5,R6,R7,R8);
+	R1=RELEASE_INODE;
+	R2=filenum;
+	R3=PID;
+	call RESOURCE_MANAGER;
+	multipop(R0,R1,R2,R3,R4,R5,R6,R7,R8);
+	[retAddr]=0;
+	[processTableEntry+9]=0;
+	SP=[processTableEntry+13];
+	ireturn;
+endif;
+AddrTranslation:
+	R2=virtAddr/512;
+	phyAddr=[PTBR+2*R2]*512+virtAddr%512;
+	return;
+

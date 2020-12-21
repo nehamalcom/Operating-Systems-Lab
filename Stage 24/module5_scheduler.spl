@@ -1,0 +1,39 @@
+breakpoint;
+alias currentPID R0;
+alias process_table_entry R1;
+alias newPID R2;
+multipush(BP);
+currentPID=[SYSTEM_STATUS_TABLE+1];
+process_table_entry=PROCESS_TABLE+currentPID*16;
+[process_table_entry+12]=SP%512;
+[process_table_entry+14]=PTBR;
+[process_table_entry+15]=PTLR;
+alias ctr R3;
+ctr=currentPID+1;
+while(ctr<MAX_PROC_NUM)do
+	if([PROCESS_TABLE+ctr*16+4]==CREATED || [PROCESS_TABLE+ctr*16+4]==READY)then
+		break;
+	endif;
+	ctr=ctr+1;
+endwhile;
+newPID=ctr;
+if(ctr==MAX_PROC_NUM)then
+	newPID=0;
+endif;
+process_table_entry=PROCESS_TABLE+newPID*16;
+SP=[process_table_entry+11]*512+[process_table_entry+12];
+PTBR=[process_table_entry+14];
+PTLR=[process_table_entry+15];
+[SYSTEM_STATUS_TABLE+1]=newPID;
+if([process_table_entry+4]==CREATED)then
+	[process_table_entry+4]=RUNNING;
+	[process_table_entry+9]=0;
+	SP=[process_table_entry+13];
+	//restoring BP from kernel stack top
+	BP=[[process_table_entry+11]*512];
+	ireturn;
+endif;
+[process_table_entry + 4] = RUNNING;
+[process_table_entry + 9] = 0;
+multipop(BP);
+return;

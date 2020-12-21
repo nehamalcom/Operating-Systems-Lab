@@ -1,0 +1,17 @@
+breakpoint;
+alias PID R9;
+alias processTableEntry R10;
+
+PID=[SYSTEM_STATUS_TABLE+1];
+processTableEntry=PROCESS_TABLE+PID*16;
+
+//changing mode to exit system call 10
+[processTableEntry+9]=10;
+[processTableEntry+13]=SP;
+SP=[processTableEntry+11]*512-1;
+
+multipush(R9,R10);
+R1=EXIT_PROCESS;
+call PROCESS_MANAGER;
+call CONTEXT_SWITCH;
+multipop(R9,R10);
